@@ -7,12 +7,15 @@ porkchop.server
 """
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from SocketServer import ThreadingMixIn
+from multiprocessing import Pool
 import json
 import traceback
 import urlparse
 
 from porkchop.plugin import PorkchopPluginHandler
 
+def get_plugin_data(plugin):
+    return plugin.data
 
 class GetHandler(BaseHTTPRequestHandler):
     def format_output(self, fmt, data):
@@ -59,11 +62,13 @@ class GetHandler(BaseHTTPRequestHandler):
         module = path.split('/')[1]
 
         try:
+            pool = Pool()
             if module:
                 plugin = PorkchopPluginHandler.plugins[module](self)
                 plugin.force_refresh = force_refresh
                 self.log_message('Calling plugin: %s with force=%s' % (module, force_refresh))
-                data.update({module: plugin.data})
+                res = pool.apply_async(get_plugin_data, [plugin])
+                data.update({module: res.get(timeout=5)})
             else:
                 for plugin_name, plugin in PorkchopPluginHandler.plugins.iteritems():
                     try:
