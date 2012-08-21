@@ -42,9 +42,6 @@ class PorkchopPlugin(object):
     refresh = 60
     force_refresh = False
 
-    def __init__(self, handler):
-        self.handler = handler
-
     @property
     def data(self):
         if self.should_refresh():
@@ -125,9 +122,6 @@ class PorkchopPlugin(object):
         sock.connect(path)
 
         return sock
-
-    def log_error(self, *args, **kwargs):
-        return self.handler.log_error(*args, **kwargs)
 
 
 class PorkchopPluginHandler(object):

@@ -7,7 +7,7 @@ porkchop.server
 """
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from SocketServer import ThreadingMixIn
-from multiprocessing import Pool
+from multiprocessing import Pool, TimeoutError
 import json
 import traceback
 import urlparse
@@ -64,21 +64,25 @@ class GetHandler(BaseHTTPRequestHandler):
         try:
             pool = Pool()
             if module:
-                plugin = PorkchopPluginHandler.plugins[module](self)
+                plugin = PorkchopPluginHandler.plugins[module]()
                 plugin.force_refresh = force_refresh
                 self.log_message('Calling plugin: %s with force=%s' % (module, force_refresh))
-                res = pool.apply_async(get_plugin_data, [plugin])
-                data.update({module: res.get(timeout=5)})
+                try:
+                    data.update({module: pool.apply_async(get_plugin_data, [plugin]).get(timeout=5)})
+                except TimeoutError:
+                    self.log_error('Plugin timed out: name=%s', module)
             else:
+                results = {}
                 for plugin_name, plugin in PorkchopPluginHandler.plugins.iteritems():
+                    plugin.force_refresh = force_refresh
+                    self.log_message('Calling plugin: %s with force=%s' % (plugin_name, force_refresh))
+                    results[plugin_name] = pool.apply_async(get_plugin_data, [plugin()])
+
+                for plugin_name, result in results.iteritems():
                     try:
-                        plugin.force_refresh = force_refresh
-                        self.log_message('Calling plugin: %s with force=%s' % (plugin_name, force_refresh))
-                        # if the plugin has no data, it'll only have one key:
-                        # refreshtime
-                        result = plugin(self).data
-                        if len(result) > 1:
-                            data.update({plugin_name: result})
+                        data.update({plugin_name: result.get(timeout=5)})
+                    except TimeoutError:
+                        self.log_error('Plugin timed out: name=%s', plugin_name)
                     except Exception, e:
                         self.log_error('Error loading plugin: name=%s exception=%s, traceback=%s', plugin_name, e,
                                        traceback.format_exc())
